@@ -2,8 +2,6 @@
 
 R or python codes used to reproduce computational analysis results in the article. 
 
-Get Started
 Almost all R codes used in this project are included in mHEC_CR2020.Rmd, from which you can start. Other files list here, are the related Rdata (UMI matrix) and genesets. Hope it will help you.
 
-Citation
 If it should help you, please consider to cite this.
