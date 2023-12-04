@@ -1,0 +1,1155 @@
+---
+title: "210909_version1"
+author: "Yanjuan Chen"
+date: "2021/9/9"
+output: html_document
+---
+
+# setup
+```{r}
+library(formatR)
+knitr::opts_chunk$set(echo = TRUE,tidy = T)
+options(stringsAsFactors = F)
+rm(list = ls())
+```
+
+
+# package
+```{r}
+library(Seurat)
+library(tidyverse)
+library(magrittr)
+library(Matrix)
+library(ggplot2)
+library(RColorBrewer)
+library(readxl)
+library(plyr)
+library(dplyr)
+library(patchwork)
+```
+
+
+#my_colors
+```{r}
+color_list <- list()
+color_list$other_colors1 <- c('#476D87','#E95C59','#E59CC4','#AB3282','#58A4C3','#23452F',
+                              '#D55E00','#968175','#5F3D69','#C5DEBA','#58A4C3','#E4C755',
+                              '#F7F398','#AA9A59', '#E63863','#E39A35','#C1E6F3','#6778AE',
+                              '#91D0BE','#B53E2B','#712820', '#DCC1DD','#CCE0F5','#CCC9E6',
+                              '#625D9E','#68A180','#3A6963','#56B4E9','#FF0A54','#7B2CBF')
+
+color_list$other_colors2 <- c('#D55E00','#53A85F','#5F3D69','#C5DEBA','#F7F398','#BD956A', 
+                              '#E63863','#E39A35','#C1E6F3','#6778AE','#91D0BE','#B53E2B',
+                              '#712820','#DCC1DD','#CCE0F5','#CCC9E6','#625D9E','#68A180',
+                              '#3A6963','#56B4E9','#E0D4CA','#1F77B4','#AEC7E8','#FF7F0E',
+                              '#279E68','#975D4D','#FFBB78','#E377C2','#B5BD61','#706993')
+
+color_list$other_colors3 <- c('#53A85F','#F1BB72','#F3B1A0','#D6E7A3','#57C3F3',"#FE0000",
+                              "#D0B38A","#FF00AE","#FC8D62",'#23452F', '#6778AE','#91D0BE',
+                              '#BD956A','#8C549C','#585658',"#CCE0F5","#A020F1","#0403E5",
+                              "#007502","#FF8C01",'blue','cyan','green',"purple",'yellow',
+                              'orange','red',"navy","black","grey70")
+
+###########
+color_list$Phase <- setNames(c('#29ABE2','#F7931E','#F15A24'),nm = c("G1","S","G2M"))
+color_list$method <- setNames(c("#CCE0F5","#A020F1"),nm = c("SABR","icSABR"))
+
+color_list$state <- setNames(c('#476D87','#E95C59'),nm = c("before","after"))
+
+color_list$HTO_maxID <- setNames(c('#1F77B4','#AEC7E8','#FF7F0E','#279E68','#975D4D','#FFBB78'), 
+                        nm = c("PBMC-RGL","PBMC-XZH","PBMC-BFY","PBMC-WTS","PBMC-WZF","PBMC-ZBC"))
+
+color_list$cluster_color <- setNames(c('#66cc00','#8a2051','#ff99cc','#cccc00','#ff5722','#ff9900','#1986ec',
+                                       '#ff9966','#996600','#073b4c','#66cccc','#009966','#ef476f','#9966cc'), 
+                                nm = c('CD4_Naive','CD8_Naive',"CD4_Memory",'CD8_CM',"CD8_EM",'CD4_TE','CD8_TE',
+                                       "Th",'Treg',"CD8_HAVCR2","NKT",'MAIT','gd_T',"Prolif_T"))
+```
+
+
+#data
+```{r}
+load(file = "pbmc_all_CCA_hvg2500.RData")
+```
+
+
+```{r fig.height=4.5,fig.width=6}
+Seurat::DimPlot(pbmc_all, reduction = "umap",group.by = "cluster",
+                label = F,cols = color_list$cluster_color,pt.size = 0.01)
+```
+
+
+```{r fig.height=4.5,fig.width=6}
+Seurat::DimPlot(pbmc_all, reduction = "umap",group.by = "Phase",
+                label = F,cols = color_list$phase1,pt.size = 0.01)
+```
+
+
+
+##violin
+```{r fig.width=15, fig.height=8}
+top_marker <- c("CD3E",'CD4','CD8B','SELL','CCR7','GZMK','NKG7','GNLY','FGFBP2','GZMB','GZMH',
+                'GZMA','FOXP3','LAG3','TIGIT','HAVCR2','KLRC2',"TYROBP","FCGR3A",
+                'TRAV1-2','TRDC','TRDV2','MKI67')
+DefaultAssay(pbmc_all) <- "RNA"
+data_expr <- as.matrix(pbmc_all@assays$RNA@data)
+obs <- pbmc_all@meta.data[,'cluster',drop = F]
+gene_data<- data_expr[top_marker,]
+
+violin_data <- data.frame(obs,t(gene_data[,rownames(obs)]),check.names = F)
+violin_data <- melt(violin_data, variable.name = 'gene',value.name = 'Expression')
+violin_data$cluster <- factor(violin_data$cluster,
+                            levels = c('CD4_Naive','CD8_Naive',"CD4_Memory",'CD8_CM',
+                                       "CD8_EM",'CD4_TE','CD8_TE',"Th",'Treg',
+                                       "CD8_HAVCR2","NKT",'MAIT','gd_T',"Prolif_T"))
+```
+
+
+```{r fig.width=10, fig.height=5}
+tmp <- ggplot(data=violin_data,aes(x=cluster,y=Expression,fill=cluster))+
+    geom_violin()+
+    coord_flip()+
+    facet_grid(cluster~gene,scales = 'free')+
+    scale_fill_manual(values = color_list$cluster_color)+
+    theme_bw()+
+    theme(text= element_text(size = 12),
+          axis.ticks.y = element_blank(),strip.text.x = element_text(colour = "black", size=rel(0.8)),
+          strip.background =element_rect(color = "white",fill='white'),
+          strip.text.y = element_blank(),
+          panel.grid=element_blank(),panel.border=element_blank(),
+          axis.line=element_line(size=0.6,colour='black'),
+          legend.position = 'none')+
+    labs(y='Expression',x="cluster")
+ggsave(tmp,filename = 'Fig1_violin_v2.pdf',width = 10, height = 5)
+
+rm(tmp,data_expr,gene_data,obs,violin_data)
+```
+
+
+##heatmap
+```{r fig.width=15, fig.height=10}
+pbmc_all <- pbmc_all[!(rownames(pbmc_all) %in% grep("MT-", rownames(pbmc_all), value = T, ignore.case = T))]
+levels(pbmc_all$cluster)
+Idents(pbmc_all) <- "cluster"
+pbmc_all_markers <- FindAllMarkers(pbmc_all,
+                                 only.pos = TRUE, min.pct = 0.1, logfc.threshold = log(1.5)) 
+pbmc_all_markers <- pbmc_all_markers %>% filter(p_val_adj < 0.05)
+table(pbmc_all_markers$cluster)
+pbmc_all_markers$avg_log2FC
+top_5 <- pbmc_all_markers %>% group_by(cluster) %>% top_n(n = 5, wt = avg_log2FC)
+
+data1 <- pbmc_all@assays$RNA@data
+cluster1 <- sort(pbmc_all$cluster)
+
+DEG_matdata1 <- as.matrix(data1[top_5$gene,names(cluster1)])
+
+library(ComplexHeatmap)
+top_anno <- HeatmapAnnotation(cluster1 = anno_block(gp = gpar(fill = color_list$cluster_color),
+                                                    labels = levels(cluster1),
+                                                    labels_gp =gpar(col = NA)),height= unit(5, "mm"))
+DEG_matdata2 <- t(scale(t(DEG_matdata1)))
+class(DEG_matdata2)
+library(circlize)
+col_fun1 <- colorRamp2(c(-2, 0, 2), c("#0725BCFF", "grey100", "#CC1608FF"))
+col_fun <- colorRamp2(c(-2, 0, 2), c("navy", "white", "firebrick3"))
+```
+
+
+```{r fig.width=15, fig.height=12}
+Heatmap(DEG_matdata2,col = col_fun,
+        row_names_gp = gpar(fontsize = 10),column_names_gp = gpar(fontsize = 12),
+        cluster_rows = FALSE,cluster_columns = FALSE,show_column_names = FALSE,show_row_names = T,
+        column_split = cluster1,top_annotation = top_anno,column_title_rot = 90,
+        column_title_gp = gpar(fontsize = 15),column_dend_height = unit(4, "mm"),
+        heatmap_legend_param = list(title = "expression\nz-score\n(log2)",
+        title_position = "topcenter",title_gp = gpar(fontsize = 8)),
+        raster_device = c("jpeg"),raster_quality = 5)
+
+ggsave(DEG_heatmap,filename = 'Fig1_heatmap.pdf',width = 15.0, height = 12.0) 
+rm(data1,cluster1,DEG_matdata1,DEG_matdata2,top_anno)
+```
+
+
+###heatmap to dotplot
+```{r,fig.width=12, fig.height=5}
+pbmc_all$cluster <- factor(pbmc_all$cluster,
+                               levels = rev(c('CD4_Naive','CD8_Naive',"CD4_Memory",'CD8_CM',
+                                          "CD8_EM",'CD4_TE',
+                                          'CD8_TE',"Th",'Treg',"CD8_HAVCR2",
+                                          "NKT",'MAIT','gd_T',"Prolif_T")))
+top_5$cluster <- factor(top_5$cluster,levels = rev(c('CD4_Naive','CD8_Naive',"CD4_Memory",'CD8_CM',
+                                          "CD8_EM",'CD4_TE',
+                                          'CD8_TE',"Th",'Treg',"CD8_HAVCR2",
+                                          "NKT",'MAIT','gd_T',"Prolif_T")))
+DEG_dotplot <- convgene::pl_dotplot(pbmc_all@assays$RNA@data,rev(top_5$gene),
+                          group_by = pbmc_all$cluster,do_scale=T,cap_value= 1)+
+                          theme(text= element_text(size = 13.0),
+                          axis.text.x = element_text(angle = 90, hjust =1.0,size = 11),
+                          legend.key.size = unit(12, "pt"))+ggtitle('Top 5 DEG')+coord_flip()
+
+ggsave(DEG_dotplot,filename = 'Fig1_DEG_dotplot.pdf',width = 12, height = 5)
+rm(DEG_dotplot)
+```
+
+
+
+##QC gene count
+```{r,fig.width=5, fig.height=4}
+tmp <- data.frame(pbmc_all$patient,pbmc_all$nCount_RNA,pbmc_all$nFeature_RNA)
+colnames(tmp) <- c('patient','nCount_RNA','nFeature_RNA')
+tmp$log_n_counts <- log10(tmp$nCount_RNA)
+levels(tmp$patient)
+library("RColorBrewer")
+tmp1 <- ggplot(tmp, aes(x = patient, y = log_n_counts, fill = patient))+
+  geom_violin(scale='width',width=0.9,trim = F) + 
+  scale_fill_manual(values = color_list$patient)+
+   theme_classic() + geom_boxplot(width = 0.2, fill = "white",outlier.shape = NA)+
+  theme(text = element_text(size = 15), 
+        axis.text.x = element_text(size = 15), 
+        plot.title = element_text(hjust = 0.5), legend.position = c(0.1,0.9))+
+  ggtitle("UMIs in each cell") + xlab("Patient") +  ylab("log10_counts")+guides(fill=FALSE)
+ggsave(tmp1,filename = 'FigS1_UMIs_violin.pdf',width = 5.0, height = 4.0)
+```
+
+##QC UMIs
+```{r,fig.width=5.0, fig.height=4.0}
+tmp1 <- ggplot(tmp, aes(x = patient, y = nFeature_RNA, fill = patient))+
+  geom_violin(scale='width',width=0.9,trim = F) + 
+  scale_fill_manual(values = color_list$patient)+
+   theme_classic() + geom_boxplot(width = 0.2, fill = "white",outlier.shape = NA)+
+  theme(text = element_text(size = 15), axis.text.x = element_text(size = 15), 
+        plot.title = element_text(hjust = 0.5), legend.position = c(0.1,0.9))+
+  ggtitle("Number of gene in each cell") + xlab("Patient") +  ylab("n_genes")+guides(fill=FALSE)
+ggsave(tmp1,filename = 'FigS1_gene_count_violin.pdf',width = 5.0, height = 4.0)
+rm(tmp,tmp1)
+```
+
+
+##SingleR did not run
+```{r}
+library(SingleR)
+library(Seurat)
+hsa_ref1 <- HumanPrimaryCellAtlasData()
+hsa_ref2 <- BlueprintEncodeData()	
+hsa_ref3 <- DatabaseImmuneCellExpressionData()	
+hsa_ref4 <- NovershternHematopoieticData()	
+hsa_ref5 <- MonacoImmuneData()	
+
+hsa_refs <- list(HPCA = hsa_ref1, BPEncode = hsa_ref2, Dimmune =hsa_ref3, Hema = hsa_ref4, MImmune = hsa_ref5)
+hsa_labels_main <- list(hsa_ref1$label.main, hsa_ref2$label.main, hsa_ref3$label.main, hsa_ref4$label.main, hsa_ref5$label.main)
+hsa_labels_fine <- list(hsa_ref1$label.fine, hsa_ref2$label.fine, hsa_ref3$label.fine, hsa_ref4$label.fine, hsa_ref5$label.fine)
+```
+
+
+```{r}
+all_res <- list()
+for(i in setdiff(1:5, c(1,2,4))){
+  ref_i <- hsa_refs[[i]]
+  label_i <- hsa_labels_main[[i]]
+  all_res[[i]] <- SingleR(test = pbmc_all@assays$RNA@data,ref = ref_i, labels = label_i, 
+                          clusters = pbmc_all$cluster,method = "cluster", de.method = "wilcox", de.n = 200)
+}
+
+all_res$mult <- SingleR(test = pbmc_all@assays$RNA@data,
+                        ref = hsa_refs[-c(1,2,4)], labels = hsa_labels_fine[-c(1,2,4)],
+                        method = "cluster", clusters = pbmc_all$cluster,
+                        de.method = "wilcox", de.n = 200)
+```
+
+
+```{r fig.height=8, fig.width=12}
+for(i in setdiff(1:6, c(1,2,4))){
+  plotScoreHeatmap(all_res[[i]], clusters = levels(pbmc_all$cluster),
+                 show.labels = T, show.pruned = F,order.by.clusters = F,show_colnames = T, max.labels = 50,
+        color = colorRampPalette(c("grey90", "grey60","blue","cyan","green3","yellow","orange","red","brown"))(50))
+}
+
+```
+
+
+##phase
+```{r,fig.width=5, fig.height=4}
+pbmc_all$Phase <- case_when(
+ pbmc_all$S.Score<0.2 & pbmc_all$G2M.Score<0.2 ~ "G0/G1",
+  pbmc_all$S.Score>0.2 & pbmc_all$S.Score > pbmc_all$G2M.Score ~ "S",
+  pbmc_all$G2M.Score>0.2 & pbmc_all$S.Score < pbmc_all$G2M.Score ~ "G2/M")
+
+tmp_cc <- data.frame(pbmc_all$S.Score,pbmc_all$G2M.Score,pbmc_all$Phase)
+colnames(tmp_cc) <- c('S.score','G2M.score','Phase')
+tmp_cc$Phase <- factor(tmp_cc$Phase,levels = c("G0/G1","S","G2/M"))
+
+tmp <- ggplot(tmp_cc)+
+  geom_point_rast(aes(x=S.score,y=G2M.score,color = Phase),raster.dpi = 500,shape=20,size =0.6)+
+  scale_color_manual(values = c('#29ABE2','#F7931E','#F15A24'))+
+  theme_classic()+
+  theme(text = element_text(size = 18),plot.title = element_text(hjust = 0.5),legend.position = "right",
+         legend.key.size = unit(15, "pt"),legend.key.width = unit(.5, "lines"))+
+  ggtitle("Cell cycle") + xlab("S.score") +  ylab("G2M.score")+
+  geom_vline(mapping = aes(xintercept = 0.2),linetype = 2) +
+  geom_hline(mapping = aes(yintercept = 0.2),linetype = 2)
+
+ggsave(tmp,filename = 'FigS1c_cell_phase_dots.pdf',width = 5, height = 4)
+rm(tmp,tmp_cc)
+```
+
+
+```{r fig.height=4.5,fig.width=5}
+tmp <- Seurat::DimPlot(pbmc_all, reduction = "umap",group.by = "Phase",label = F,raster = T,
+                cols = color_list$phase1,pt.size = 0.5)
+
+ggsave(tmp,filename = 'figureS2FigS1c_cell_phase_umap.pdf',width = 5, height = 4.5)
+```
+
+
+##proportion_change
+```{r,fig.width=3.8, fig.height=3}
+tmp <- table(pbmc_all$cluster,pbmc_all$patient,pbmc_all$method,pbmc_all$state)
+tmp <- melt(tmp)
+colnames(tmp) <- c("cluster","patient","method","state","value")
+table(tmp$state)
+tmp$state <- factor(tmp$state,levels = c("Pre","Post"))
+
+bar <- ggplot(data = tmp, aes(x=state,y=value,fill = cluster))+
+  facet_wrap(~method,nrow = 1) +
+  geom_bar(stat="identity",width = 0.7,position = "fill") +
+  theme_bw()+
+  theme(text= element_text(size = 12),legend.key.size = unit(12, "pt"),
+              axis.ticks = element_blank(),
+              panel.border = element_rect(color = 'black',size = 0.8),
+              panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+              legend.title = element_blank(),
+              plot.title = element_text(hjust = 0.1))+
+              xlab("")+ylab("Proportion")+
+  scale_fill_manual(values = color_list$cluster_color)
+ggsave(bar,filename = 'Fig1e_method_Proportion_bar.pdf',width = 3.8, height = 3)
+```
+
+
+```{r,fig.width=10, fig.height=3}
+tmp <- table(pbmc_all$cluster,pbmc_all$patient,pbmc_all$method,pbmc_all$state)
+tmp <- melt(tmp)
+colnames(tmp) <- c("cluster","patient","method","state","value")
+table(tmp$state)
+tmp$state <- factor(tmp$state,levels = c("Pre","Post"))
+
+bar <- ggplot(data = tmp, aes(x=state,y=value,fill = cluster))+
+  facet_wrap(~patient,nrow = 1) +
+  geom_bar(stat="identity",width = 0.7,position = "fill") +
+  theme_bw()+
+  theme(text= element_text(size = 12),legend.key.size = unit(12, "pt"),
+              axis.ticks = element_blank(),
+              panel.border = element_rect(color = 'black',size = 0.8),
+              panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+              legend.title = element_blank(),
+              plot.title = element_text(hjust = 0.1))+
+              xlab("Patients")+ylab("Proportion")+
+  scale_fill_manual(values = color_list$cluster_color)
+```
+
+
+
+##volcano
+```{r,fig.width=5, fig.height=4}
+pbmc_all$group <- case_when(
+  pbmc_all$state=="Pre" & pbmc_all$method=="SABR" ~ "pre1",
+  pbmc_all$state=="Post" & pbmc_all$method=="SABR" ~ "post1",
+  pbmc_all$state=="Pre" & pbmc_all$method=="icSABR" ~ "pre2",
+  pbmc_all$state=="Post" & pbmc_all$method=="icSABR" ~ "post2")
+
+tmp <- pbmc_all[,pbmc_all$method=="SABR"]
+tmp$cluster_vs <- paste(tmp$group,tmp$cluster,sep = "_")
+```
+
+
+
+###plot
+```{r,fig.width=5, fig.height=4}
+Idents(tmp) <- "cluster_vs"
+sub <- subset(x = tmp, idents = c("post1_CD8_TE","pre1_CD8_TE"), invert = F)
+
+sub$cluster_vs <- factor(sub$cluster_vs,levels = c("post1_CD8_TE","pre1_CD8_TE"))
+Idents(sub) <- "cluster_vs"
+
+data <- apply(
+  sub@assays$RNA@data[
+    Matrix::rowMeans(sub@assays$RNA@data) > 0,
+    ],
+  1, 
+  function(row){
+  x <- row[sub$cluster_vs == "post1_CD8_TE"]
+  y <- row[sub$cluster_vs == "pre1_CD8_TE"]
+  p <- wilcox.test(x,y)
+  log2fc <- ExpMean(x)-ExpMean(y)
+  return(c(p, log2fc))
+})
+```
+
+
+```{r,fig.width=5, fig.height=4}
+data1 <- do.call(rbind,lapply(data, function(x){x[[3]]}))
+data1 <- data.frame(data1)
+
+colnames(data1) <- 'p.value'
+
+data2 <- do.call(rbind,lapply(data, function(x){x[[8]]}))
+data2 <- data.frame(data2)
+colnames(data2) <- 'log2fc'
+
+p_data_volcano <- cbind(data1,data2)
+p_data_volcano$log2fc <- p_data_volcano$log2fc/log(2)
+
+range(p_data_volcano$p.value)
+testrange <- p_data_volcano[p_data_volcano$p.value!=0,]
+range(testrange$p.value)
+
+p_data_volcano$p.value1 <- p_data_volcano$p.value
+p_data_volcano$p.value_adj1 <- p.adjust(p_data_volcano$p.value1)
+p_data_volcano$FDR1 <- -log10(p_data_volcano$p.value_adj1)
+
+p_data_volcano$regulation <- case_when(
+  p_data_volcano$log2fc > log2(1.5) & p_data_volcano$p.value_adj<0.05 ~"up",
+  p_data_volcano$log2fc < -log2(1.5) & p_data_volcano$p.value_adj<0.05  ~"down",
+  p_data_volcano$log2fc <= log2(1.5)| p_data_volcano$log2fc >= -log2(1.5)| p_data_volcano$p.value_adj>0.05  ~"nonsense")
+
+
+p_data_volcano$regulation=factor(p_data_volcano$regulation, levels=c("down","up","nonsense"), order=T)
+
+
+gene_markers1 <- p_data_volcano %>% filter(p.value_adj1 < 0.05)
+gene_markers1$gene <- rownames(gene_markers1)
+
+
+gene_markers2 <- gene_markers1 %>% group_by(regulation) %>% top_n(n = 10, wt = abs(log2fc) )
+marker_gene <- gene_markers2[gene_markers2$regulation!="nonsense",]$gene
+
+p_data_volcano$gene <- rownames(p_data_volcano)
+p_data_volcano$sign <- ifelse(p_data_volcano$gene %in% marker_gene,rownames(p_data_volcano),NA)
+```
+
+
+```{r,fig.width=5, fig.height=4.3}
+library(ggrepel)
+volcano <- ggplot(p_data_volcano,aes(x=log2fc,y=FDR1))+
+            geom_point_rast(aes(color=regulation),raster.dpi = 500,shape=20,size =1.5,alpha=0.8)+
+            scale_color_manual(values =c("up" = "#FF2720","down" = "#027FB6","nonsense"='grey'))+
+            labs(x="Log2 (fold change)",y="-Log10 (adjusted p value)")+
+            geom_hline(yintercept = -log10(0.05),linetype=4,color="grey")+
+            geom_vline(xintercept=c(log2(1.5),-log2(1.5)),linetype=4,color="grey")+ 
+            theme_light()+
+            labs(title = 'CD8_TE in SABR')
+            theme(panel.border = element_blank(),panel.grid.major = element_blank(),
+                  panel.grid.minor = element_blank(),axis.line = element_line(colour = "black"))+
+            geom_label_repel(aes(label=sign),segment.alpha = 0.5,color="black",
+                             segment.size = 0.2,label.padding = 0.1)
+            
+ggsave(volcano,filename = 'Fig3d_icSABR_CD8_TE_volcano.pdf',width = 5, height = 4.3)
+rm(data,data1,data2,sub,all_res)
+rm(gene_markers1,gene_markers2,p_data_volcano,testrange,tmp,volcano)
+```
+
+
+
+##score_geneset
+```{r,fig.width=20, fig.height=4}
+DefaultAssay(pbmc_all) <- "RNA"
+geneset_naive <- list(c("CCR7","TCF7","LEF1","SELL"))
+geneset_cyto <- list(c('GNLY',"NKG7","CST7","PRF1","GZMA","GZMB","GZMH",'FGFBP2'))
+geneset_costimulatory <- list(c('TNFRSF9',"TNFRSF14","CD28","ICOS","CD226","TNFRSF25"))
+geneset_inhibit <- list(c("PDCD1","TIGIT","LAG3","HAVCR2","CTLA4"))
+geneset_Treg <- list(c("FOXP3",'CTLA4','TGFB1','IL10',"IL2RA"))
+FeaturePlot(pbmc_all,reduction = "umap",
+            features = c("FOXP3",'CTLA4','TGFB1','TIGIT',"IL2RA"),
+            ncol = 5,pt.size = 0.01,cols =c("grey90","#FFE3E0","#F7A399","#EF6351","#AD2831","#800E13"))
+```
+
+###heatmap
+```{r fig.width=4.5, fig.height=6}
+tmp <- convgene::pl_averageHeatmap(pbmc_all@assays$RNA@data,c("CCR7","TCF7","LEF1","SELL",
+                                        'GNLY',"NKG7","CST7","PRF1","GZMA","GZMB","GZMH",'FGFBP2',
+                                        'TNFRSF9',"TNFRSF14","CD28","ICOS","CD226","TNFRSF25",
+                                        "PDCD1","TIGIT","LAG3","HAVCR2","CTLA4",
+                                        "FOXP3",'TGFB1','IL10',"IL2RA"),
+                  group_by = pbmc_all$cluster,scale_feature = T,show_rownames=T,cluster_cols = T,border_color = F,
+                  heat_color = colorRampPalette(c("#0725BCFF", "grey100", "#CC1608FF"),
+                                                interpolate = "spline", alpha = T)(50))
+                  
+ggsave(tmp,filename = 'FigS3a_score_geneset_heatmap.pdf',width = 4.5, height = 6)               
+```
+
+
+```{r,fig.width=16, fig.height=4}
+DefaultAssay(pbmc_all) <- "RNA"
+pbmc_all <- ScaleData(pbmc_all, verbose = FALSE)
+pbmc_all <- AddModuleScore(object = pbmc_all,features = geneset_naive,name = 'Naive_score')
+pbmc_all <- AddModuleScore(object = pbmc_all,features = geneset_cyto,name = 'Cyto_score')
+pbmc_all <- AddModuleScore(object = pbmc_all,features = geneset_costimulatory,name = 'Costimulatory_score')
+pbmc_all <- AddModuleScore(object = pbmc_all,features = geneset_inhibit,name = 'Inhibit_score')
+pbmc_all <- AddModuleScore(object = pbmc_all,features = geneset_costimulatory,name = 'Treg_score')
+```
+
+
+
+```{r fig.width=12, fig.height=8}
+violin_data <- data.frame(pbmc_all$cluster,pbmc_all$state,
+                          pbmc_all$method,pbmc_all$patient,
+                          pbmc_all$Naive_score1,pbmc_all$Cyto_score1,
+                          pbmc_all$Costimulatory_score1,pbmc_all$Inhibit_score1,pbmc_all$Treg_score1)
+colnames(violin_data) <- c('cluster','state','method',"patient",'Naive_score','Cytot_score',"Co-stimulatory_score",
+                           'Inhibit_score',"Treg_score")
+violin_data$state <- factor(violin_data$state,levels = c("Pre","Post"))
+```
+
+
+
+```{r}
+Naive <- violin_data[,c(1:5)]
+Naive$type <- "Naive_score"
+colnames(Naive) <- c("cluster","state","method","patient","value","type")
+Cytot <- violin_data[,c(1:4,6)]
+Cytot$type <- "Cytot_score"
+colnames(Cytot) <- c("cluster","state","method","patient","value","type")
+Co_stimulatory <- violin_data[,c(1:4,7)]
+Co_stimulatory$type <- "Co-stimulatory_score"
+colnames(Co_stimulatory) <- c("cluster","state","method","patient","value","type")
+Inhibit <- violin_data[,c(1:4,8)]
+Inhibit$type <- "Inhibit_score"
+colnames(Inhibit) <- c("cluster","state","method","patient","value","type")
+
+Treg <- violin_data[,c(1:4,9)]
+Treg$type <- "Treg_score"
+colnames(Treg) <- c("cluster","state","method","patient","value","type")
+
+tmp_score <- rbind(Naive,Cytot,Co_stimulatory,Inhibit,Treg)
+tmp_score$type2 <- paste(tmp_score$state,tmp_score$type,sep = "_")
+tmp_score$type <- factor(tmp_score$type,
+                         levels = c("Naive_score","Cytot_score","Co-stimulatory_score","Inhibit_score","Treg_score"))
+tmp_score$state <- factor(tmp_score$state,labels = c("Pre","Post"))
+tmp_score$state <- factor(tmp_score$state,levels = c("Pre","Post"))
+tmp_score$cluster <- factor(tmp_score$cluster,levels = c('CD4_Naive','CD8_Naive',"CD4_Memory",'CD8_CM',
+                                       "CD8_EM",'CD4_TE','CD8_TE',"Th",'Treg',"CD8_HAVCR2","NKT",'MAIT',
+                                       'gd_T',"Prolif_T"))
+```
+
+
+###violin_split_score
+```{r fig.width=5, fig.height=18}
+tmp <- ggplot(tmp_score, aes(x = cluster, y = value, fill = cluster))+
+  geom_violin(scale='width',width=0.8,trim = F) + 
+  scale_fill_manual(values = color_list$cluster_color)+
+  facet_wrap(~type,scales = "free",nrow = 5)+
+   theme_bw() + #geom_boxplot(width = 0.1, fill = "white",outlier.shape = NA)+
+  theme(text = element_text(size = 15), 
+        axis.text.y = element_text(size = 15),
+        axis.text.x = element_text(angle = 45, hjust =1.0,size = 12),
+    plot.title = element_text(hjust = 0.5))+ guides(fill=FALSE)+
+  ggtitle("Score in each cluster") + xlab("") +  ylab("")
+ggsave(tmp,filename = '230518_Figures_version2/figureS3/FigS3b_all_split_score_group_violin.pdf',
+       width = 5, height = 18)
+```
+
+
+###violin_split_method
+####icSABR
+```{r fig.width=14, fig.height=4.2}
+compaired <- list(c("Pre", "Post"))
+table(tmp_score$method)
+library(ggpubr)
+library(ggsignif)
+tmp <- ggplot(tmp_score[tmp_score$method=="icSABR",],aes(state,value,fill=state))+
+  geom_violin(width = 0.9,alpha=1.2,scale='width',trim = F,position = position_dodge(0.8),aes(linetype=NA))+
+  geom_boxplot(width=0.1,position = position_dodge(0.8))+
+  facet_wrap(~type,scales = "free",nrow = 1)+
+  scale_fill_manual(values = color_list$state)+
+  theme_bw() + 
+  theme(text = element_text(size = 15),axis.text.y = element_text(size = 15),
+        axis.text.x = element_text(hjust =1.0,size = 12),plot.title = element_text(hjust = 0.5))+ 
+  geom_signif(comparisons = compaired,step_increase = 0.3,map_signif_level = T,test = wilcox.test)+
+  labs(fill="State")+
+  guides(fill=FALSE)+
+  xlab("")+
+  ylab("Score")+
+  ggtitle(str_glue("Scores of all T cells in icSABR"))
+
+ggsave(tmp,filename = 'FigS3c_ic_SABR_split_score_group_violin.pdf',width = 14, height = 4.2)
+```
+
+####SABR
+```{r fig.width=14, fig.height=4.2}
+compaired <- list(c("Pre", "Post"))
+tmp <- ggplot(tmp_score[tmp_score$method=="SABR",],
+                            aes(state,value,fill=state))+
+  geom_violin(width = 0.9,alpha=1.2,scale='width',trim = F,
+              position = position_dodge(0.8),aes(linetype=NA))+
+  geom_boxplot(width=0.1,position = position_dodge(0.8))+
+  facet_wrap(~type,scales = "free",nrow = 1)+
+  scale_fill_manual(values = color_list$state)+
+  theme_bw() + 
+  theme(text = element_text(size = 15),axis.text.y = element_text(size = 15),
+        axis.text.x = element_text(hjust =1.0,size = 12),
+        plot.title = element_text(hjust = 0.5))+ 
+  geom_signif(comparisons = compaired,step_increase = 0.3,map_signif_level = T,test = wilcox.test)+
+  labs(fill="State")+
+  guides(fill=FALSE)+
+  xlab("")+ylab("Score")+ggtitle(str_glue("Scores of all T cells in SABR"))
+
+ggsave(tmp,filename = 'FigS3c_SABR_split_score_group_violin.pdf',width = 14, height = 4.2)
+```
+
+
+###violin_split_cluster
+####icSABR
+```{r fig.width=10, fig.height=3.8}
+compaired <- list(c("Pre", "Post"))
+cluster_violin <- list()
+for (i in levels(tmp_score$cluster)){
+  cluster_violin[[i]] <- 
+  ggplot(tmp_score[tmp_score$method=="icSABR"&tmp_score$cluster==i,],aes(state,value,fill=state))+
+  geom_violin(width = 0.9,alpha=1.2,scale='width',trim = F,position = position_dodge(0.8),aes(linetype=NA))+
+  geom_boxplot(width=0.1,position = position_dodge(0.8))+
+  facet_wrap(~type,scales = "free",nrow = 1)+
+  scale_fill_manual(values = color_list$state)+
+  theme_bw() + 
+  theme(text = element_text(size = 15),axis.text.y = element_text(size = 15),
+        axis.text.x = element_text(hjust =1.0,size = 12),plot.title = element_text(hjust = 0.5))+ 
+  geom_signif(comparisons = compaired,step_increase = 0.3,map_signif_level = T,test = wilcox.test)+
+  labs(fill="State")+
+  guides(fill=FALSE)+
+  xlab("")+ylab("Score")+ggtitle(str_glue("{i} in icSABR"))
+}
+```
+
+
+```{r fig.width=10, fig.height=50}
+library(ggpubr)
+tmp <- ggarrange(plotlist =cluster_violin,ncol=1,nrow=14)
+ggsave(tmp,filename = 'FigS4_icSABR_split_cluster_score_violin.pdf',limitsize = F,width = 10, height = 50)
+```
+
+
+
+####SABR
+```{r fig.width=10, fig.height=3.8}
+compaired <- list(c("Pre", "Post"))
+cluster_violin <- list()
+for (i in levels(tmp_score$cluster)){
+  cluster_violin[[i]] <- 
+  ggplot(tmp_score[tmp_score$method=="SABR"&tmp_score$cluster==i,],aes(state,value,fill=state))+
+  geom_violin(width = 0.9,alpha=1.2,scale='width',trim = F,position = position_dodge(0.8),aes(linetype=NA))+
+  geom_boxplot(width=0.1,position = position_dodge(0.8))+
+  facet_wrap(~type,scales = "free",nrow = 1)+
+  scale_fill_manual(values = color_list$state)+
+  theme_bw() + 
+  theme(text = element_text(size = 15),axis.text.y = element_text(size = 15),
+        axis.text.x = element_text(hjust =1.0,size = 12),
+  plot.title = element_text(hjust = 0.5))+ 
+  geom_signif(comparisons = compaired,step_increase = 0.3,map_signif_level = T,test = wilcox.test)+
+    labs(fill="State")+
+    guides(fill=FALSE)+
+  xlab("")+ylab("Score")+ggtitle(str_glue("{i} in SABR"))
+}
+```
+
+
+```{r fig.width=10, fig.height=50}
+library(ggpubr)
+tmp <- ggarrange(plotlist =cluster_violin,ncol=1,nrow=14)
+ggsave(tmp,filename = 'FigS4_SABR_split_cluster_score_violin.pdf',limitsize = F,width = 10, height = 50)
+```
+
+
+##GSEA
+```{r}
+library(msigdbr)
+library(fgsea)
+library(dplyr)
+library(ggplot2)
+library(presto)
+library(clusterProfiler)
+library(enrichplot)
+library(ReactomePA)
+library(data.table)
+library(org.Hs.eg.db)
+pbmc_all$group <- case_when(
+  pbmc_all$state=="Pre" & pbmc_all$method=="SABR" ~ "pre1",
+  pbmc_all$state=="Post" & pbmc_all$method=="SABR" ~ "post1",
+  pbmc_all$state=="Pre" & pbmc_all$method=="icSABR" ~ "pre2",
+  pbmc_all$state=="Post" & pbmc_all$method=="icSABR" ~ "post2"
+)
+pbmc_all$cluster2 <- paste(pbmc_all$group,pbmc_all$cluster,sep = "_")
+Idents(pbmc_all) <- "cluster2"
+```
+
+##ic_SABR
+```{r}
+tmp <-  subset(pbmc_all,idents = c("pre2_CD8_TE","post2_CD8_TE"))
+CD8_TE_genes <- wilcoxauc(tmp, 'cluster2')
+```
+
+###GO
+```{r}
+post1 <- CD8_TE_genes[CD8_TE_genes$group=="post2_CD8_TE",]
+names(post1)[1] <- "SYMBOL"
+genelist <- post1$logFC 
+names(genelist) <- post1$SYMBOL
+genelist <- sort(genelist,decreasing = TRUE)
+gseGO_res <- gseGO(genelist,OrgDb = org.Hs.eg.db, keyType = "SYMBOL", ont="BP", 
+                   nPerm = 1000, minGSSize = 5, maxGSSize = 1000, pvalueCutoff=1)
+```
+
+
+###KEGG&Reactome
+```{r}
+post1 <- CD8_TE_genes[CD8_TE_genes$group=="post2_CD8_TE",]
+names(post1)[1] <- "SYMBOL"
+data_FC1 <- bitr(geneID = post1$SYMBOL,fromType = "SYMBOL",
+                 toType = "ENTREZID",OrgDb = org.Hs.eg.db)
+data_FC <- post1[which(data_FC1$SYMBOL %in% post1$SYMBOL),]
+data_id <- merge(data_FC,data_FC1,by = "SYMBOL")
+genelist1 <- data_id$logFC  
+names(genelist1) <- data_id$ENTREZID
+genelist1 <- sort(genelist1,decreasing = TRUE)
+
+gseKEGG_res <- gseKEGG(genelist1,organism = "hsa",use_internal_data = T,
+                       nPerm = 1000, minGSSize = 5, maxGSSize = 1000, pvalueCutoff=1)
+library(ReactomePA)
+gseReactome_res <- gsePathway(genelist1,organism = "human",nPerm = 1000, 
+                              minGSSize = 10, maxGSSize = 1000, pvalueCutoff=1)
+```
+
+
+
+###plot
+```{r fig.width=16,fig.height=3.3}
+p1 <- gseaplot2(gseGO_res,"GO:0035455",title = "icSABR CD8_TE Post vs Pre",
+            base_size = 10,rel_heights = c(1.0,0.3,0.6),
+            pvalue_table = T)
+p2 <- gseaplot2(gseGO_res,"GO:0035456",title = "icSABR CD8_TE Post vs Pre",
+            base_size = 10,rel_heights = c(1.0,0.3,0.6),
+            pvalue_table = T)
+p3 <- gseaplot2(gseGO_res,"GO:1902106",title = "icSABR CD8_TE Post vs Pre",
+            base_size = 10,rel_heights = c(1.0,0.3,0.6),
+            pvalue_table = T)
+p4 <- gseaplot2(gseKEGG_res,"hsa04514",title = "icSABR CD8_TE Post vs Pre",
+            base_size = 10,rel_heights = c(1.0,0.3,0.6),
+            pvalue_table = T)
+ggsave(cowplot::plot_grid(p1,p2,p3,p4,ncol = 4), width = 16, height = 3.3,
+       filename = 'Fig3f_GSEA_plot_icSABR_CD8_TE_Post_vs_Pre.pdf')
+```
+
+
+
+###Figure S5
+```{r}
+gseGO_res@result$group <- "GO"
+gseKEGG_res@result$group <- "KEGG"
+gseReactome_res@result$group <- "Reactome"
+GSEA_icSABR_CD8_TE <- rbind(gseGO_res@result,gseKEGG_res@result,gseReactome_res@result)
+```
+
+
+```{r,fig.width=8, fig.height=5}
+GSEA_icSABR_CD8_TE$regulated <- ifelse(GSEA_icSABR_CD8_TE$NES>0,"Up","Down")
+GSEA_icSABR_CD8_TE$regulated <- factor(GSEA_icSABR_CD8_TE$regulated,levels = c("Up","Down"))
+GO_bar <- ggplot(GSEA_icSABR_CD8_TE[5:19,],aes(x = reorder(Description, NES), y = NES)) +
+  geom_bar(stat = "identity", aes(fill = regulated), alpha = 1,width = 0.7) +
+  scale_fill_manual(values =c("#FF5050","#1A89BC"))+
+  coord_flip() +
+  theme_light() +
+  theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))+
+  labs(y = "Normalized enrichment score(NES) value of GSEA analysis (P value < 0.05)", x = "")+
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank())+
+  labs(title = "Compared post with pre therapy CD8_TE in icSABR")+
+  theme(plot.title = element_text(hjust = 0.7))
+ggsave(GO_bar,filename = 'FigS5b_barplot.pdf',width = 8, height = 5)
+```
+
+
+###genes
+```{r fig.width=10, fig.height=3.8}
+genes <- c('GZMH','NKG7','IFITM1','IFITM2','DUSP1','CD69','FOS','JUN')
+gene_expr <- tmp@assays$RNA@data[genes,]
+gene_expr <- data.frame(t(gene_expr))
+mete_data <- tmp@meta.data[,c("state","cluster")]
+plot_data <- cbind(gene_expr,mete_data)
+plot_data <- melt(plot_data)
+```
+
+
+```{r fig.width=8, fig.height=6.5}
+compaired <- list(c("Pre", "Post"))
+library(ggpubr)
+library(ggsignif)
+plot <- ggplot(plot_data,aes(state,value,fill=state))+
+  geom_violin(width = 0.9,alpha=1.2,scale='width',trim = T,position = position_dodge(0.8),aes(linetype=NA))+
+  geom_boxplot(width=0.15,position = position_dodge(0.8))+
+  facet_wrap(~variable,scales = "free",nrow = 2,strip.position = "top")+
+  scale_fill_manual(values = color_list$state)+
+  theme_bw() + 
+  theme(text = element_text(size = 15),axis.text.y = element_text(size = 15),
+        axis.text.x = element_text(hjust =1.0,size = 12),plot.title = element_text(hjust = 0.5))+ 
+  geom_signif(comparisons = compaired,step_increase = 0.3,map_signif_level = T,test = wilcox.test)+
+  labs(fill="State")+guides(fill=FALSE)+
+  xlab("")+ylab("Gene expression")+ggtitle(str_glue("CD8_TE in icSABR"))
+
+ggsave(plot,filename = 'Fig3e_icSABR_state_genes_violin.pdf',width = 8, height = 6.5)
+```
+
+
+##SABR
+```{r}
+Idents(pbmc_all) <- "cluster2"
+tmp <-  subset(pbmc_all,idents = c("pre1_CD8_TE","post1_CD8_TE"))
+CD8_TE_genes <- wilcoxauc(tmp, 'cluster2')
+```
+
+###GO
+```{r}
+post <- CD8_TE_genes[CD8_TE_genes$group=="post1_CD8_TE",]
+names(post)[1] <- "SYMBOL"
+genelist <- post$logFC 
+names(genelist) <- post$SYMBOL
+genelist <- sort(genelist,decreasing = TRUE)
+geneset <- read.gmt("msigdb_v2023.1.Hs_GMTs/c5.go.bp.v2023.1.Hs.symbols.gmt")
+gseGO_res <- GSEA(genelist, TERM2GENE=geneset, verbose=FALSE,scoreType = "pos",nPermSimple = 10000)
+View(gseGO_res@result)
+gseaplot2(gseGO_res,geneSetID = "GOBP_LEUKOCYTE_MEDIATED_CYTOTOXICITY", pvalue_table = TRUE)
+```
+
+
+###KEGG&Reactome
+```{r}
+post <- CD8_TE_genes[CD8_TE_genes$group=="post1_CD8_TE",]
+names(post)[1] <- "SYMBOL"
+data_FC1 <- bitr(geneID = post$SYMBOL,fromType = "SYMBOL",toType = "ENTREZID",OrgDb = org.Hs.eg.db)
+data_FC <- post[which(data_FC1$SYMBOL %in% post$SYMBOL),]
+data_id <- merge(data_FC,data_FC1,by = "SYMBOL")
+genelist1 <- data_id$logFC
+names(genelist1) <- data_id$ENTREZID
+genelist1 <- sort(genelist1,decreasing = TRUE)
+
+gseKEGG_res <- gseKEGG(genelist1,organism = "hsa",use_internal_data = T,
+                       nPerm = 1000, minGSSize = 5, maxGSSize = 1000, pvalueCutoff=1)
+
+gseReactome_res <- gsePathway(genelist1,organism = "human",nPerm = 1000, 
+                              minGSSize = 10, maxGSSize = 1000, pvalueCutoff=1)
+```
+
+
+###plot
+```{r,fig.width=16,fig.height=3.3}
+p1 <- gseaplot2(gseGO_res,"GOBP_T_CELL_ACTIVATION",title = "SABR CD8_TE Post vs Pre",
+            base_size = 10,rel_heights = c(1.0,0.3,0.6),
+            pvalue_table = TRUE)
+p2 <- gseaplot2(gseGO_res,"GOBP_LEUKOCYTE_MEDIATED_CYTOTOXICITY",title = "SABR CD8_TE Post vs Pre",
+            base_size = 10,rel_heights = c(1.0,0.3,0.6),
+            pvalue_table = TRUE)
+p3 <- gseaplot2(gseGO_res,"GOBP_LYMPHOCYTE_MEDIATED_IMMUNITY",title = "SABR CD8_TE Post vs Pre",
+            base_size = 10,rel_heights = c(1.0,0.3,0.6),
+            pvalue_table = TRUE)
+p4 <- gseaplot2(gseKEGG_res,"hsa04514",title = "SABR CD8_TE Post vs Pre",
+            base_size = 10,rel_heights = c(1.0,0.3,0.6),
+            pvalue_table = TRUE)
+
+ggsave(cowplot::plot_grid(p1,p2,p3,p4,ncol = 4),width = 16, height = 3.3,
+       filename = '230518_Figures_version2/Fig3b_GSEA_plot_SABR_CD8_TE_Post_vs_Pre.pdf')
+```
+
+
+###Figure S5
+```{r}
+gseGO_res@result$group <- "GO"
+gseKEGG_res@result$group <- "KEGG"
+gseReactome_res@result$group <- "Reactome"
+GSEA_SABR_CD8_TE <- rbind(gseGO_res@result,gseKEGG_res@result,gseReactome_res@result)
+```
+
+
+```{r,fig.width=10, fig.height=4.5}
+GSEA_SABR_CD8_TE_select$regulated <- ifelse(GSEA_SABR_CD8_TE_select$NES>0,"Up","Down")
+GSEA_SABR_CD8_TE_select$regulated <- factor(GSEA_SABR_CD8_TE_select$regulated,levels = c("Up","Down"))
+GSEA_SABR_CD8_TE_select$Description <- tolower(GSEA_SABR_CD8_TE_select$Description)
+
+GO_bar <- ggplot(GSEA_SABR_CD8_TE_select, aes(x = reorder(Description, NES), y = NES)) +
+  geom_bar(stat = "identity", aes(fill = regulated), alpha = 1,width = 0.7) +
+  scale_fill_manual(values =c("#FF5050","#1A89BC"))+
+  coord_flip() + theme_light() +
+  theme(axis.text = element_text(size = 12), legend.text = element_text(size = 12))  +
+  labs(y = "Normalized enrichment score(NES) value of GSEA analysis (P value < 0.05)", x = "") +
+  theme(panel.grid.major = element_blank(),panel.grid.minor = element_blank()) +
+  labs(title = "Compared post with pre therapy CD8_TE in SABR")+
+  theme(plot.title = element_text(hjust = 0.7))
+ggsave(GO_bar,filename = 'FigS5a_barplot.pdf',width = 12, height = 4.5)
+```
+
+###genes
+```{r fig.width=10, fig.height=3.8}
+genes <- c('GZMH','NKG7','IFITM1','IFITM2','DUSP1','CD69','FOS','JUN')
+gene_expr <- tmp@assays$RNA@data[genes,]
+gene_expr <- data.frame(t(gene_expr))
+mete_data <- tmp@meta.data[,c("state","cluster2")]
+plot_data <- cbind(gene_expr,mete_data)
+plot_data <- melt(plot_data)
+```
+
+
+```{r fig.width=8, fig.height=6.5}
+compaired <- list(c("Pre", "Post"))
+library(ggpubr)
+library(ggsignif)
+plot <- ggplot(plot_data,aes(state,value,fill=state))+
+  geom_violin(width = 0.9,alpha=1.2,scale='width',trim = T,position = position_dodge(0.8),aes(linetype=NA))+
+  geom_boxplot(width=0.15,position = position_dodge(0.8))+
+  facet_wrap(~variable,scales = "free",nrow = 2,strip.position = "top")+
+  scale_fill_manual(values = color_list$state)+
+  theme_bw() + 
+  theme(text = element_text(size = 15),axis.text.y = element_text(size = 15),
+        axis.text.x = element_text(hjust =1.0,size = 12),plot.title = element_text(hjust = 0.5))+ 
+  geom_signif(comparisons = compaired,step_increase = 0.3,map_signif_level = T,test = wilcox.test)+
+  labs(fill="State") + guides(fill=FALSE)+
+  xlab("") + ylab("Gene expression") + ggtitle(str_glue("CD8_TE in SABR"))
+ggsave(plot,filename = 'Fig3b_SABR_state_genes_violin.pdf',width = 8, height = 6.5)
+```
+
+
+
+##TCR
+```{r}
+TCR1 <- read.csv(file = "SABR_TCR_clonotype_230520.csv",header = T)
+rownames(TCR1) <- paste(TCR1$X,TCR1$X.1,sep = "-")
+TCR1 <- TCR1[,3:63]
+TCR2 <- read.csv(file = "icSABR_TCR_clonotype_230520.csv",header = T)
+rownames(TCR2) <- paste(TCR2$X,TCR2$X.1,sep = "-")
+TCR2 <- TCR2[,3:63]
+TCR_metadata <- rbind(TCR1,TCR2)
+pbmc_all <- pbmc_all[,rownames(TCR_metadata)]
+pbmc_all@meta.data <- TCR_metadata
+```
+
+
+
+```{r,fig.width=5, fig.height=4}
+tmp <- melt(tmp)
+colnames(tmp) <- c("cluster","patient","method","state","TCR_chain","value")
+tmp$state <- factor(tmp$state,levels = c("Pre","Post"))
+tmp$TCR_chain <- factor(tmp$TCR_chain,levels = c('Extra alpha','Extra beta','Single pair'))
+color_list$TCR_chain <- setNames(c('#FE9000','#FFDD4A','#F28482'),nm = c('Extra alpha','Extra beta','Single pair'))
+tmp$cluster <- factor(tmp$cluster,
+                      levels = c('CD4_Naive','CD8_Naive',"CD4_Memory",'CD8_CM',"CD8_EM",'CD4_TE','CD8_TE',
+                                "Th",'Treg',"CD8_HAVCR2","NKT",'MAIT','gd_T',"Prolif_T"))
+tmp$patient <- factor(tmp$patient,levels = c("P001","P002","P003","P004","P005","P006","P007"))
+```
+
+
+```{r,fig.width=5, fig.height=4}
+ggplot(data = tmp,aes(x=patient, y=value,fill = TCR_chain))+
+  geom_bar(stat="identity",width = 0.65,position = "fill") + 
+  theme_light()+
+  theme(text= element_text(size = 12),legend.key.size = unit(12, "pt"),
+        axis.ticks = element_blank(),panel.border = element_rect(color = 'black',size = 0.8),
+        panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.1))+
+  xlab("patient")+ylab("Proportion")+
+  scale_fill_manual(values = color_list$TCR_chain)
+```
+
+
+```{r,fig.width=8, fig.height=4.3}
+ggplot(data = tmp,aes(x=cluster, y=value,fill = TCR_chain))+
+  geom_bar(stat="identity",width = 0.65,position = "fill") +
+  theme_light()+
+  theme(text= element_text(size = 12),legend.key.size = unit(12, "pt"),
+        axis.ticks = element_blank(),axis.text.x = element_text(angle = 45, hjust =1.0,size = 11),
+        panel.border = element_rect(color = 'black',size = 0.8),
+        panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+        legend.title = element_blank(),plot.title = element_text(hjust = 0.1))+
+  xlab("patient") + ylab("Proportion")+
+  scale_fill_manual(values = color_list$TCR_chain)
+```
+
+
+##TCR_clone_porpotion
+```{r}
+pbmc_all$clonal_expansion2 <- factor(pbmc_all$clonal_expansion2,
+                                     levels = c("Large clones","Small clones","Single clone"))
+```
+
+
+```{r,fig.width=8, fig.height=4.5}
+tmp <- melt(tmp)
+colnames(tmp) <- c("cluster","state","clonal_expansion","Patient","method","value")
+tmp$state <- factor(tmp$state,levels = c("Pre","Post"))
+tmp$cluster <- factor(tmp$cluster,
+                    levels = c('CD4_Naive','CD8_Naive',"CD4_Memory",'CD8_CM',"CD8_EM",'CD4_TE','CD8_TE',
+                                          "Th",'Treg',"CD8_HAVCR2","NKT",'MAIT','gd_T',"Prolif_T"))
+tmp$cluster_state <- paste(tmp$state,tmp$cluster,sep = "_")
+tmp$cluster_state <- factor(tmp$cluster_state,
+                            levels = c('Pre_CD4_Naive','Post_CD4_Naive','Pre_CD8_Naive','Post_CD8_Naive',
+                               "Pre_CD4_Memory","Post_CD4_Memory",'Pre_CD8_CM','Post_CD8_CM',
+                               "Pre_CD8_EM","Post_CD8_EM",'Pre_CD4_TE','Post_CD4_TE',
+                               'Pre_CD8_TE','Post_CD8_TE',"Pre_Th","Post_Th",
+                               'Pre_Treg','Post_Treg',"Pre_CD8_HAVCR2","Post_CD8_HAVCR2",
+                               "Pre_NKT","Post_NKT",'Pre_MAIT','Post_MAIT',
+                               'Pre_gd_T','Post_gd_T',"Pre_Prolif_T","Post_Prolif_T"))
+```
+
+
+```{r,fig.width=3.1, fig.height=3.4}
+bar <- ggplot(data = tmp[tmp$method=="SABR",],aes(x=state, y=value,fill = clonal_expansion))+
+  geom_bar(stat="identity",width = 0.65,position = "fill") + 
+  theme_light()+
+  theme(text= element_text(size = 12),legend.key.size = unit(12, "pt"),
+        axis.ticks = element_blank(),panel.border = element_rect(color = 'black',size = 0.8),
+        panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+        legend.title = element_blank(),plot.title = element_text(hjust = 0.1))+
+  xlab("patient")+ylab("Proportion")+
+  scale_fill_manual(values = c("#FF0054","#FFBD00",'#DFFFD6'))+ggtitle("SABR")
+ggsave(bar,filename = 'Fig5b_SABR_TCR_clone_barplot.pdf',width = 3.1, height = 3.4)
+```
+
+
+```{r,fig.width=14, fig.height=4.5}
+bar <- ggplot(data = tmp[tmp$method=="icSABR",],aes(x=cluster_state, y=value,fill = clonal_expansion))+
+  geom_bar(stat="identity",width = 0.65,position = "fill") +
+  theme_light()+
+  theme(text= element_text(size = 12),legend.key.size = unit(12, "pt"),
+        axis.ticks = element_blank(),axis.text.x = element_text(angle = 45, hjust =1.0,size = 11),
+        panel.border = element_rect(color = 'black',size = 0.8),
+        panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+        legend.title = element_blank(),plot.title = element_text(hjust = 0.1))+
+  xlab("")+ylab("Proportion")+
+  scale_fill_manual(values = c("#FF0054","#FFBD00",'#DFFFD6'))+ggtitle("icSABR")
+ggsave(bar,filename = 'Fig5g_icSABR_TCR_clone_cluster_barplot.pdf',width = 14, height = 4.5)
+```
+
+
+```{r,fig.width=8, fig.height=3.0}
+bar <- ggplot(data = tmp,aes(x=state, y=value,fill = clonal_expansion))+
+  facet_wrap(~Patient,nrow = 1) +
+  geom_bar(stat="identity",width = 0.7,position = "fill") +
+  theme_light()+
+  theme(text= element_text(size = 12),legend.key.size = unit(12, "pt"),
+        axis.ticks = element_blank(),panel.border = element_rect(color = 'black',size = 0.8),
+        panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+        legend.title = element_blank(),plot.title = element_text(hjust = 0.1))+
+  xlab("")+ylab("Proportion")+
+  scale_fill_manual(values = c("#FF0054","#FFBD00",'#DFFFD6'))+ggtitle("SABR p001-004;icSABR p005-007")
+ggsave(bar,filename = 'FigS7b_TCR_clone_Patient_barplot.pdf',width = 8.0, height = 3.0)
+```
+
+##venn_TCR_overlap
+####cluster_venn
+```{r,fig.height=9, fig.width=9}
+library(VennDiagram)
+table(pbmc_all[,pbmc_all$state=="Pre"]$clonotype%in%pbmc_all[,pbmc_all$state=="Post"]$clonotype)
+pbmc_all$clonotype_c <- paste("c",pbmc_all$clonotype,sep = "_")
+```
+
+
+```{r,fig.height=4, fig.width=4}
+venn <- venn.diagram(
+    list(pre = pbmc_all[,pbmc_all$method=="SABR"&pbmc_all$state=="Pre"]$clonotype_c,
+         post = pbmc_all[,pbmc_all$method=="SABR"&pbmc_all$state=="Post"]$clonotype_c),
+    alpha=0.8,
+    main = "SABR", filename = NULL,#col=c("grey90","grey90"),
+    fill=c('#758BFD','#FF8600'),reverse=F,
+    lwd = 1,lty = 'blank',resolution = 800, col = "white",
+    cat.col = c('#758BFD','#FF8600'),
+    label.col = "#000000",cex = 1.5,fontfamily = "serif",
+    cat.cex = 1.5,cat.fontfamily = "serif")
+ggsave(cowplot::ggdraw(venn),filename = 'Fig6a_SABR_all_venn.pdf',width = 4, height = 4)
+```
+
+
+```{r,fig.width=8, fig.height=4.5}
+overlap_TCR <- setdiff(pbmc_all[,pbmc_all$state=="Post" & pbmc_all$method=="icSABR"]$clonotype_c,
+                 pbmc_all[,pbmc_all$state=="Pre" & pbmc_all$method=="icSABR"]$clonotype_c)
+
+tmp_pbmc <- pbmc_all[,pbmc_all$method=="icSABR"&pbmc_all$clonotype_c%in%overlap_TCR]
+tmp <- table(tmp_pbmc$cluster,tmp_pbmc$state,tmp_pbmc$clonal_expansion2,tmp_pbmc$method)
+tmp <- melt(tmp)
+colnames(tmp) <- c("cluster","state","clonal_expansion","method","value")
+tmp$cluster <- factor(tmp$cluster,levels = c('CD4_Naive','CD8_Naive',"CD4_Memory",'CD8_CM',
+                                             "CD8_EM",'CD4_TE','CD8_TE',"Th",
+                                             'Treg',"CD8_HAVCR2","NKT",'MAIT','gd_T',"Prolif_T"))
+tmp$clonal_expansion <- factor(tmp$clonal_expansion,levels = c("Large clones","Small clones","Single clone"))
+```
+
+
+```{r,fig.width=2.8, fig.height=4.5}
+plot <- ggplot(data = tmp,aes(x=method, y=value,fill = clonal_expansion))+
+  geom_bar(stat="identity",width = 0.65,position = "fill") +
+  theme_light()+
+  theme(text= element_text(size = 12),legend.key.size = unit(12, "pt"),
+        axis.ticks = element_blank(),axis.text.x = element_text(angle = 45, hjust =1.0,size = 11),
+        panel.border = element_rect(color = 'black',size = 0.8),
+        panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+        legend.title = element_blank(),plot.title = element_text(hjust = 0.1))+
+  xlab("")+ylab("Proportion")+
+  scale_fill_manual(values = c("#FF0054","#FFBD00",'#DFFFD6'))+ggtitle("icSABR")
+
+ggsave(plot,filename = 'Fig6g_barplot.pdf',width = 2.8, height = 4.5)
+```
+
+
+```{r,fig.width=2.8, fig.height=4.5}
+plot <- ggplot(data = tmp,aes(x=method, y=value,fill = cluster))+
+  geom_bar(stat="identity",width = 0.65,position = "fill") +
+  theme_light()+
+  theme(text= element_text(size = 12),legend.key.size = unit(12, "pt"),
+        axis.ticks = element_blank(),axis.text.x = element_text(angle = 45, hjust =1.0,size = 11),
+        panel.border = element_rect(color = 'black',size = 0.8),
+        panel.grid.major = element_blank(),panel.grid.minor = element_blank(),
+        legend.title = element_blank(),
+        plot.title = element_text(hjust = 0.1))+
+  xlab("")+ylab("Proportion")+
+  scale_fill_manual(values = color_list$cluster_color)+ggtitle("SABR")
+
+ggsave(plot,filename = 'Fig6h_barplot.pdf',width = 2.8, height = 4.5)
+
+rm(tmp,tmp_score,tmp_pbmc)
+rm(all_res,plot,venn,plot)
+rm(overlap_TCR,bar)
+```
+
+
+###DEG_clonetype CD8_TE  
+```{r,fig.width=2.5, fig.height=4.6}
+CD8_sub <- pbmc_all[,pbmc_all$cluster%in%c("CD8_TE")]
+CD8_sub$clonal_expansion2 <- factor(CD8_sub$clonal_expansion2,
+                                     levels = c("Large clones","Small clones","Single clone"))
+Idents(CD8_sub) <- "clonal_expansion2"
+CD8_DEG <- FindAllMarkers(CD8_sub[,CD8_sub$method=="SABR"],only.pos = TRUE, min.pct = 0.1, logfc.threshold = log(1.5)) 
+CD8_DEG  <- CD8_DEG  %>% filter(p_val_adj < 0.05)
+
+top_10 <- CD8_DEG %>% group_by(cluster) %>% top_n(n = 10, wt = avg_log2FC)
+table(CD8_sub$cluster,CD8_sub$clonal_expansion2)
+
+plot <- pl_dotplot(CD8_sub@assays$RNA@data,unique(top_10$gene),do_scale = T,
+           gradientn_colors = gradient_colors$f_DbWtRd(5),
+           group_by = CD8_sub$clonal_expansion2)+ 
+  theme(text= element_text(size = 13.0), 
+        axis.text.x = element_text(angle = 45, hjust =1.0,size = 11),
+        legend.key.size = unit(10, "pt"))+
+  ggtitle('Top DEG of CD8+ T cells in SABR')
+
+ggsave(plot,filename = 'Fig6e_DEG_dotplot_231128.pdf',width = 3.0, height = 4.6)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

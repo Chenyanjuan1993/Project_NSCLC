@@ -1,0 +1,234 @@
+---
+title: "analysis"
+output: html_document
+---
+# setup
+```{r}
+library(formatR)
+knitr::opts_chunk$set(echo = TRUE,tidy = T)
+options(stringsAsFactors = F)
+rm(list = ls())
+```
+
+
+# package
+```{r}
+library(Seurat)
+library(tidyverse)
+library(magrittr)
+library(Matrix)
+library(ggplot2)
+library(RColorBrewer)
+library(readxl)
+library(plyr)
+library(dplyr)
+library(patchwork)
+```
+
+
+#my_colors
+```{r}
+color_list <- list()
+
+color_list$other_colors1 <- c('#476D87','#E95C59','#E59CC4','#AB3282','#58A4C3','#23452F',
+                              '#D55E00','#968175','#5F3D69','#C5DEBA','#58A4C3','#E4C755',
+                              '#F7F398','#AA9A59', '#E63863','#E39A35','#C1E6F3','#6778AE',
+                              '#91D0BE','#B53E2B','#712820', '#DCC1DD','#CCE0F5','#CCC9E6',
+                              '#625D9E','#68A180','#3A6963','#56B4E9','#FF0A54','#7B2CBF')
+
+color_list$other_colors2 <- c('#D55E00','#53A85F','#5F3D69','#C5DEBA','#F7F398','#BD956A', 
+                              '#E63863','#E39A35','#C1E6F3','#6778AE','#91D0BE','#B53E2B',
+                              '#712820','#DCC1DD','#CCE0F5','#CCC9E6','#625D9E','#68A180',
+                              '#3A6963','#56B4E9','#E0D4CA','#1F77B4','#AEC7E8','#FF7F0E',
+                              '#279E68','#975D4D','#FFBB78','#E377C2','#B5BD61','#706993')
+
+color_list$other_colors3 <- c('#53A85F','#F1BB72','#F3B1A0','#D6E7A3','#57C3F3',"#FE0000",
+                              "#D0B38A","#FF00AE","#FC8D62",'#23452F', '#6778AE','#91D0BE',
+                              '#BD956A','#8C549C','#585658',"#CCE0F5","#A020F1","#0403E5",
+                              "#007502","#FF8C01",'blue','cyan','green',"purple",'yellow',
+                              'orange','red',"navy","black","grey70")
+
+
+###########
+color_list$Phase <- setNames(c('#29ABE2','#F7931E','#F15A24'),nm = c("G1","S","G2M"))
+color_list$method <- setNames(c("#CCE0F5","#A020F1"),nm = c("SABR","icSABR"))
+
+color_list$state <- setNames(c('#476D87','#E95C59'),nm = c("before","after"))
+
+color_list$HTO_maxID <- setNames(c('#1F77B4','#AEC7E8','#FF7F0E','#279E68','#975D4D','#FFBB78'), 
+                        nm = c("PBMC-RGL","PBMC-XZH","PBMC-BFY","PBMC-WTS","PBMC-WZF","PBMC-ZBC"))
+
+
+color_list$cluster_color <- setNames(c('#66cc00','#8a2051','#ff99cc','#cccc00','#ff5722','#ff9900','#1986ec',
+                                       '#ff9966','#996600','#073b4c','#66cccc','#009966','#ef476f','#9966cc'), 
+                                nm = c('CD4_Naive','CD8_Naive',"CD4_Memory",'CD8_CM',"CD8_EM",'CD4_TE','CD8_TE',
+                                       "Th",'Treg',"CD8_HAVCR2","NKT",'MAIT','gd_T',"Prolif_T"))
+```
+
+
+#marker gene
+```{r}
+top_marker <- c("PTPRC","CD3E",'CD4','CD8A','CD8B','SELL','CCR7','LEF1',"TCF7",'FOXP3','GZMK',
+                 'NKG7','GNLY','FGFBP2','GZMH','GZMB','GZMA',
+                 "PDCD1",'LAG3', 'CTLA4','TIGIT','HAVCR2',"BTLA",
+                'TRDC','TRDV2','KLRC1','KLRC2',"NCR3","KLRB1",'TRAV1-2','MKI67')
+gene_marker <- c('PTPRC','CD3D','CD4','CD8A','CD8B','SELL','TCF7', 'CCR7', 'LEF1','FOXP3','IL2RA',
+                 'NKG7', 'GZMK','GZMH','GZMB','GZMA','GNLY','ZNF683','PRF1','NCR3','FGFBP2',
+                 'LAG3', 'PDCD1','TIGIT','HAVCR2','TRDC','TRDV2','KLRC1','KLRC2','TRAV1-2','SLC4A10','MKI67',
+                 'IFNG','TBX21','CCR4','GATA3', 'IL4',
+                'PTGDR2','KLRB1','CCR4','PDCD1','CXCR5','BCL6','CCR7')
+
+plot_gene <- c('CD4','CD8A','CD8B','SELL','CCR7','LEF1',"TCF7",
+                 'NKG7', 'GZMK','GZMH','GZMB','GZMA','GNLY','GZMK',
+                  'KLRC2','FOXP3','TRAV1-2','NCR3','KLRB1',
+                   'TRDC','TRDV2','LAG3', 'PDCD1','TIGIT','HAVCR2','MKI67')
+
+Th_markers <- c('IFNG','TBX21','CCR4','GATA3', 'IL4','IL13',
+                'PTGDR2','KLRB1','CCR4','PDCD1','CXCR5','BCL6','CCR7','FOXP3')
+```
+
+
+#load data
+```{r}
+load(file = "~/230330_lung/201222_lung_R/data/pbmc_ready_210823.RData")
+```
+
+##CCA
+```{r}
+pbmc_ready <- NormalizeData(pbmc_ready)
+pbmc_ready <- CellCycleScoring(pbmc_ready,
+                             g2m.features =intersect(c(cc.genes$g2m.genes,cc.genes.updated.2019$g2m.genes),
+                                                     rownames(pbmc_ready)),
+                             s.features = intersect(c(cc.genes$s.genes,cc.genes.updated.2019$s.genes),
+                                                    rownames(pbmc_ready)))
+pbmc_list <- SplitObject(pbmc_ready, split.by = "batch_merge")
+
+for (i in 1:length(pbmc_list)) {
+    pbmc_list[[i]] <- NormalizeData(pbmc_list[[i]], verbose = FALSE)
+    pbmc_list[[i]] <- FindVariableFeatures(pbmc_list[[i]], selection.method = "vst",
+                                            nfeatures = 2500,
+                                            verbose = FALSE)
+}
+```
+
+```{r}
+hvg_tmp <- SelectIntegrationFeatures(pbmc_list, nfeatures = 2500)
+cc_cor_genes <- apply(pbmc_ready@assays$RNA@data[hvg_tmp,], 1, function(x) {
+                      max(abs(cor(x, pbmc_ready$S.Score)), abs(cor(x,pbmc_ready$G2M.Score)))})
+length(names(which(cc_cor_genes > 0.3)))
+table(pbmc_ready$batch_merge)
+```
+
+```{r}
+map_anchors <- FindIntegrationAnchors(
+    object.list = pbmc_list, dims = 1:15,
+    anchor.features = setdiff(hvg_tmp, names(which(cc_cor_genes > 0.3)))
+    )
+pbmc_all <- IntegrateData(anchorset = map_anchors, dims = 1:15)
+```
+
+```{r fig.height=6,fig.width=10}
+pbmc_all <- ScaleData(pbmc_all, verbose = FALSE)
+pbmc_all <- RunPCA(pbmc_all,npcs = 100, verbose = FALSE)
+```
+
+```{r fig.height=6,fig.width=10}
+ElbowPlot(pbmc_all,ndims = 100)+ElbowPlot(pbmc_all,ndims = 80)+ElbowPlot(pbmc_all,ndims = 50)+ElbowPlot(pbmc_all,ndims = 30)
+```
+
+```{r fig.height=4.5,fig.width=6}
+pbmc_all <- RunUMAP(pbmc_all, reduction = "pca", dims = 1:15,verbose = FALSE)
+DefaultAssay(pbmc_all) <- "integrated"
+pbmc_all <- FindNeighbors(pbmc_all, reduction = "pca", dims = 1:15)
+pbmc_all <- FindClusters(pbmc_all, resolution = 4.0)
+```
+
+```{r fig.height=5,fig.width=10}
+Seurat::DimPlot(pbmc_all, reduction = "umap",group.by = "patient",
+                cols = color_list$other_colors1,pt.size = 0.01)+
+    Seurat::DimPlot(pbmc_all, reduction = "umap",group.by = "seurat_clusters",label = T,
+                cols = color_list$other_colors1,pt.size = 0.01)
+```
+
+```{r,fig.width=10,fig.height=9}
+pbmc_all$cluster <- factor(pbmc_all$cluster,
+                               levels = c('CD4_Naive','CD8_Naive',"CD4_Memory",'CD8_CM',"CD8_EM",'CD4_TE','CD8_TE',
+                                          "Th",'Treg',"CD8_HAVCR2","NKT",'MAIT','gd_T',"Prolif_T"))
+
+Seurat::DimPlot(pbmc_all, reduction = "umap",group.by = "Phase",cols = color_list$other_colors1,pt.size = 0.01)+
+  Seurat::DimPlot(pbmc_all, reduction = "umap",group.by = "patient",cols = color_list$other_colors1,pt.size = 0.01)+
+Seurat::DimPlot(pbmc_all, reduction = "umap",group.by = "state",cols = color_list$colors1,pt.size = 0.01)+
+  Seurat::DimPlot(pbmc_all, reduction = "umap",group.by = "method",cols = color_list$other_colors1,pt.size = 0.01)
+
+ggsave(umap_plot,filename = 'figures/umap_plot.pdf',width = 15, height = 5)
+```
+
+```{r,,fig.width=20, fig.height=8}
+DefaultAssay(pbmc_all) <- "RNA"
+FeaturePlot(pbmc_all,reduction = "umap",
+            features = c('NCAM1','FCGR3A','KLRB1','KLRC1','KLRC3','KLRD1','KLRF1','NCR1',"NKG7","KLRC2"),
+            ncol = 5,pt.size = 0.01,cols =c("grey90","#FFE3E0","#F7A399","#EF6351","#AD2831","#800E13"))
+
+```
+
+```{r,fig.width=40, fig.height=25}
+top_marker <- c("PTPRC","CD3E",'CD4','CD8A','CD8B','SELL','CCR7','LEF1',"TCF7",'FOXP3','GZMK',
+                 'NKG7','GNLY','FGFBP2','GZMH','GZMB','GZMA',
+                 "PDCD1",'LAG3', 'CTLA4','TIGIT','HAVCR2',"BTLA",
+                'TRDC','TRDV2','KLRC1','KLRC2',"TYROBP","FCGR3A","KIR3DL2","NCR3","KLRB1","SLC4A10",'TRAV1-2','MKI67')
+DefaultAssay(pbmc_all) <- "RNA"
+FeaturePlot(pbmc_all,reduction = "umap",features = top_marker,ncol = 8,pt.size = 0.01,
+            cols =c("grey90","#FFE3E0","#F7A399","#EF6351","#AD2831","#800E13"))
+ggsave(gene_plot,filename = 'figures/gene_plot.pdf',width = 25, height = 35)
+```
+
+```{r,fig.width=10, fig.height=10}
+VlnPlot(pbmc_all,features = c("nCount_RNA","nFeature_RNA"),group.by ="batch_merge",
+        pt.size = 0,ncol = 1,cols = color_list$other_colors1)
+```
+
+
+```{r,fig.width=15, fig.height=25}
+top_marker2 <- c('CD4','CD8A','CD8B','SELL','FOXP3','GZMK',
+                 'GZMB','HAVCR2',"BTLA",
+                'TRDC','TRDV2','KLRC1','KLRC2','TRAV1-2','MKI67')
+DefaultAssay(pbmc_all) <- "RNA"
+FeaturePlot(pbmc_all,reduction = "umap",features = top_marker2,ncol = 3,pt.size = 0.01,
+            cols =c("grey90","#FFE3E0","#F7A399","#EF6351","#AD2831","#800E13"))
+
+```
+
+
+#set_cluster
+```{r}
+pbmc_all$cluster <- case_when(
+  pbmc_all$seurat_clusters%in%c('5','54') ~ "gd_T",
+  pbmc_all$seurat_clusters%in%c('2','55',"34","46") ~ "NKT",
+  pbmc_all$seurat_clusters%in%c('22','53') ~ "MAIT",
+  pbmc_all$seurat_clusters%in%c('43',"9","47") ~ "Treg",
+  pbmc_all$seurat_clusters%in%c('44',"51") ~ "Prolif_T",
+  pbmc_all$seurat_clusters%in%c('52') ~ "CD8_HAVCR2",
+  pbmc_all$seurat_clusters%in%c('38') ~ "CD8_Naive",
+  pbmc_all$seurat_clusters%in%c('10',"4","40","35","37","6","40","31","23","33") ~ "CD4_Naive",
+  pbmc_all$seurat_clusters%in%c('28',"13") ~ "CD4_Memory",
+  pbmc_all$seurat_clusters%in%c('12','25') ~ "CD8_CM",
+  pbmc_all$seurat_clusters%in%c('17','11',"19","12","32") ~ "CD8_EM",
+  pbmc_all$seurat_clusters%in%c('41','14','18','42',"3",'5','16','26','50',"27","15") ~ "CD8_TE",
+  pbmc_all$seurat_clusters%in%c("1","8","24","45","36","30","29","49","7","48","20","39") ~ "Th",
+  pbmc_all$seurat_clusters%in%c("0","21") ~ "CD4_TE",
+  TRUE ~ pbmc_all$seurat_clusters
+)
+```
+
+```{r,fig.width=6,fig.height=5}
+Seurat::DimPlot(pbmc_all, reduction = "umap",group.by = "cluster",cols = color_list$cluster_color,pt.size = 0.01)
+```
+
+
+#save data
+```{r}
+save(pbmc_all,file = "pbmc_all_CCA_hvg2500.RData")
+```
+
+
+
